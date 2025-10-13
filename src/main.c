@@ -251,6 +251,7 @@ int main() {
   glUseProgram(glass_shader);
   unsigned int glass_shader_position_location = glGetUniformLocation(glass_shader, "pos");
   unsigned int glass_shader_scale_location = glGetUniformLocation(glass_shader, "scale");
+  unsigned int glass_shader_borderColor = glGetUniformLocation(glass_shader, "borderColor");
 
   float unnormal_scale[] = {300.f, 300.f};
   float scale[] = {
@@ -262,6 +263,11 @@ int main() {
 
   glUniform2f(glass_shader_position_location, pos[0], pos[1]);
   glUniform2f(glass_shader_scale_location, scale[0], scale[1]);
+
+  float color[] = {0.1, 0.3, 0.8};
+
+  glUniform3fv(glass_shader_borderColor, 1, color);
+  // glUniform3f(glass_shader_borderColor, color[0], color[1], color[2]);
   printf("Shader index %d\n", glass_shader);
   printf("Shader position location %d\n", glass_shader_position_location);
 
@@ -291,6 +297,8 @@ int main() {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screen_width, screen_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
   // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_textureData);
   glGenerateMipmap(GL_TEXTURE_2D);
@@ -319,10 +327,16 @@ int main() {
     glfwGetCursorPos(window, &x, &y);
     pos[0] = (((float)x - WINDOW_WIDTH / 2.f) / WINDOW_WIDTH) * 2;
     pos[1] = ((WINDOW_HEIGHT / 2.f - (float)y) / WINDOW_HEIGHT) * 2;
+
+    float colorpos[] = {(pos[0] + 1) * 0.5, (pos[1] + 1) * 0.5};
+    color[0] = colorpos[0];
+    color[1] = colorpos[1];
+    color[2] = colorpos[1] + colorpos[0] * 0.9;
     // printf("X: %02f, Y: %02f\n", pos[0], pos[1]);
     glBindVertexArray(glass_VAO);
     glUseProgram(glass_shader);
     glUniform2f(glass_shader_position_location, pos[0], pos[1]);
+    glUniform3fv(glass_shader_borderColor, 1, color);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     if (glfwGetKey(window, GLFW_KEY_PERIOD) == GLFW_PRESS && timer > 0.2) {
