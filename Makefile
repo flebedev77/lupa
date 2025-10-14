@@ -1,6 +1,6 @@
 TARGET=liq
 
-SRCS=src/main.c src/mathc.c
+SRCS=src/main.c
 
 all: $(TARGET) run
 

@@ -35,6 +35,27 @@ static Window root_window = {0};
 static int screen_width = 0;
 static int screen_height = 0;
 
+static float scroll_amount = 0.0f;
+static float scroll_sensitivity = 0.001f;
+
+
+static float pos[] = {0.1f, 0.8f};
+static float backgroundPos[] = {0.0f, 0.0f};
+static float scalePivot[] = {0.0f, 0.0f};
+
+
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
+{
+  scroll_amount += (float)yoffset * scroll_sensitivity;
+  printf("Scroll received %0.2f\n", scroll_amount);
+
+  // backgroundPos[0] -= pos[0];
+  // backgroundPos[1] -= pos[1];
+
+  scalePivot[0] += pos[0] - scalePivot[0];
+  scalePivot[1] += pos[1] - scalePivot[1];
+}
+
 struct FileData {
   uint8_t* data;
   size_t len;
@@ -196,6 +217,7 @@ int main() {
   window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "Zoom", glfwGetPrimaryMonitor(), NULL);
   glfwSwapInterval(1);
   glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
+  glfwSetScrollCallback(window, scroll_callback);
   if (!window) {
     glfwTerminate();
     return EXIT_FAILURE;
@@ -252,6 +274,9 @@ int main() {
   unsigned int glass_shader_position_location = glGetUniformLocation(glass_shader, "pos");
   unsigned int glass_shader_scale_location = glGetUniformLocation(glass_shader, "scale");
   unsigned int glass_shader_borderColor = glGetUniformLocation(glass_shader, "borderColor");
+  unsigned int background_shader_zoom = glGetUniformLocation(background_shader, "zoom");
+  unsigned int background_shader_mousepos = glGetUniformLocation(background_shader, "mousepos");
+  unsigned int background_shader_scalePivot = glGetUniformLocation(background_shader, "scalePivot");
 
   float unnormal_scale[] = {300.f, 300.f};
   float scale[] = {
@@ -259,7 +284,6 @@ int main() {
     (unnormal_scale[1] / WINDOW_HEIGHT)
   };
 
-  float pos[] = {0.1f, 0.8f};
 
   glUniform2f(glass_shader_position_location, pos[0], pos[1]);
   glUniform2f(glass_shader_scale_location, scale[0], scale[1]);
@@ -314,19 +338,27 @@ int main() {
   {
     prevTime = time;
     time = glfwGetTime();
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glBindVertexArray(VAO);
-    glUseProgram(background_shader);
-    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
-
     double x, y;
     glfwGetCursorPos(window, &x, &y);
     pos[0] = (((float)x - WINDOW_WIDTH / 2.f) / WINDOW_WIDTH) * 2;
     pos[1] = ((WINDOW_HEIGHT / 2.f - (float)y) / WINDOW_HEIGHT) * 2;
+
+
+
+    glClearColor(0.0f, 1.0f, 1.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glBindVertexArray(VAO);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glUseProgram(background_shader);
+    glUniform1f(background_shader_zoom, scroll_amount + 1);
+    glUniform2fv(background_shader_mousepos, 1, backgroundPos);
+    glUniform2fv(background_shader_scalePivot, 1, scalePivot);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+
 
     float colorpos[] = {(pos[0] + 1) * 0.5, (pos[1] + 1) * 0.5};
     color[0] = colorpos[0];
@@ -334,8 +366,10 @@ int main() {
     color[2] = colorpos[1] + colorpos[0] * 0.9;
     // printf("X: %02f, Y: %02f\n", pos[0], pos[1]);
     glBindVertexArray(glass_VAO);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glUseProgram(glass_shader);
-    glUniform2f(glass_shader_position_location, pos[0], pos[1]);
+    glUniform2fv(glass_shader_position_location, 1, pos);
     glUniform3fv(glass_shader_borderColor, 1, color);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 

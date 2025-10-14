@@ -6,6 +6,7 @@ uniform sampler2D textureSampler;
 
 uniform vec2 pos;
 uniform vec2 scale;
+uniform vec2 zoom;
 uniform vec3 borderColor;
 
 void main() {
@@ -18,11 +19,13 @@ void main() {
   vec2 transformedSamplerCoord = texCoord * scale + transformedPos;
   transformedSamplerCoord -= scale / 2;
 
-  float tl = length(transformedCoord);
+  float tl = length(transformedCoord) + 2;
   tl = tl * tl;
-  tl = tl * tl;
-  tl = tl * tl;
-  vec2 finalSampler = transformedSamplerCoord + (transformedCoord * tl * tl) * 0.01;
+  // tl = tl * tl;
+  // tl = tl * tl;
+  // tl = tl * tl;
+  // vec2 finalSampler = transformedSamplerCoord + (transformedCoord * tl) * 0.01;
+  vec2 finalSampler = transformedSamplerCoord - (transformedCoord * tl) * 0.01;
   vec4 col = texture(textureSampler, finalSampler);
   // vec2 samplerDebug = texCoord + (transformedCoord * length(transformedCoord) * length(transformedCoord) * length(transformedCoord) * length(transformedCoord)) * 0.2;
   // col = vec4(samplerDebug * 0.3, 0, 1);
