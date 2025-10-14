@@ -36,7 +36,7 @@ static int screen_width = 0;
 static int screen_height = 0;
 
 static float scroll_amount = 0.0f;
-static float scroll_sensitivity = 0.001f;
+static float scroll_sensitivity = 0.1f;
 
 
 static float pos[] = {0.1f, 0.8f};
@@ -274,6 +274,7 @@ int main() {
   unsigned int glass_shader_position_location = glGetUniformLocation(glass_shader, "pos");
   unsigned int glass_shader_scale_location = glGetUniformLocation(glass_shader, "scale");
   unsigned int glass_shader_borderColor = glGetUniformLocation(glass_shader, "borderColor");
+  unsigned int glass_shader_zoom = glGetUniformLocation(glass_shader, "zoom");
   unsigned int background_shader_zoom = glGetUniformLocation(background_shader, "zoom");
   unsigned int background_shader_mousepos = glGetUniformLocation(background_shader, "mousepos");
   unsigned int background_shader_scalePivot = glGetUniformLocation(background_shader, "scalePivot");
@@ -353,7 +354,7 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glUseProgram(background_shader);
-    glUniform1f(background_shader_zoom, scroll_amount + 1);
+    // glUniform1f(background_shader_zoom, scroll_amount + 1);
     glUniform2fv(background_shader_mousepos, 1, backgroundPos);
     glUniform2fv(background_shader_scalePivot, 1, scalePivot);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
@@ -371,6 +372,7 @@ int main() {
     glUseProgram(glass_shader);
     glUniform2fv(glass_shader_position_location, 1, pos);
     glUniform3fv(glass_shader_borderColor, 1, color);
+    glUniform1f(glass_shader_zoom, scroll_amount + 1.f);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     if (glfwGetKey(window, GLFW_KEY_PERIOD) == GLFW_PRESS && timer > 0.2) {
