@@ -9,6 +9,7 @@ uniform vec2 scale;
 uniform vec2 screenSize;
 uniform float aspectRatio;
 uniform float zoom;
+uniform int lensMode;
 uniform vec3 borderColor;
 
 void main() {
@@ -28,6 +29,7 @@ void main() {
   // vec2 finalSampler = transformedSamplerCoord + (transformedCoord * tl) * 0.01;
   vec2 finalSampler = transformedCoord * (tl + zoom) * 0.01;
   finalSampler.y *= aspectRatio;
+  finalSampler *= lensMode;
   finalSampler = transformedSamplerCoord - finalSampler;
   vec4 col = texture(textureSampler, finalSampler);
   // vec2 samplerDebug = texCoord + (transformedCoord * length(transformedCoord) * length(transformedCoord) * length(transformedCoord) * length(transformedCoord)) * 0.2;

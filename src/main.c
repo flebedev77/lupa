@@ -34,15 +34,14 @@ static Screen* screen = NULL;
 static Window current_window = {0};
 static Window root_window = {0};
 
-static int screen_width = 0;
-static int screen_height = 0;
+static int screen_width = WINDOW_WIDTH;
+static int screen_height = WINDOW_HEIGHT;
 
 static float scroll_amount = 1.0f;
 static float scroll_sensitivity = 0.1f;
 
 static float scroll_size_amount = 1.0f;
 static float scroll_size_sensitivity = 2.f;
-
 
 static float pos[] = {0.1f, 0.8f};
 static float backgroundPos[] = {0.0f, 0.0f};
@@ -53,6 +52,14 @@ static float scale[] = {
     (300.f / WINDOW_WIDTH),
     (300.f / WINDOW_HEIGHT)
   };
+
+static int lens_mode = 1;
+
+struct rectangle {
+  unsigned int VAO, VBO, EBO, shader;
+  float position[2];
+  float scale[2];
+};
 
 bool string_includes(const char* restrict buf, const char* restrict sub) {
   for (size_t i = 0; buf[i] != 0; i++) {
@@ -69,7 +76,12 @@ bool string_includes(const char* restrict buf, const char* restrict sub) {
   }
   return false;
 }
-
+void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+    if (key == GLFW_KEY_C &&  action == GLFW_RELEASE) {
+      if (lens_mode == -1) lens_mode = 1;
+      else lens_mode = -1;
+    }
+}
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
@@ -134,15 +146,6 @@ struct FileData readFile(const char* filepath) {
 
   fclose(fd);
   return (struct FileData){.data = fdData, .len = fdSize};
-}
-
-void print_matrix(float mat[16]) {
-  for (int y = 0; y < 4; y++) {
-    for (int x = 0; x < 4; x++) {
-      printf("%0.2f ", mat[(y * 4) + x]);
-    }
-    printf("\n");
-  }
 }
 
 unsigned int createShader(const char* source, unsigned int shaderType) {
@@ -278,6 +281,7 @@ int main() {
   glfwSwapInterval(1);
   glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_HIDDEN);
   glfwSetScrollCallback(window, scroll_callback);
+  glfwSetKeyCallback(window, key_callback);
   if (!window) {
     glfwTerminate();
     return EXIT_FAILURE;
@@ -337,6 +341,7 @@ int main() {
   unsigned int glass_shader_zoom = glGetUniformLocation(glass_shader, "zoom");
   unsigned int glass_shader_screen_size = glGetUniformLocation(glass_shader, "screenSize");
   unsigned int glass_shader_aspect_ratio = glGetUniformLocation(glass_shader, "aspectRatio");
+  unsigned int glass_shader_lens_mode = glGetUniformLocation(glass_shader, "lensMode");
   unsigned int background_shader_zoom = glGetUniformLocation(background_shader, "zoom");
   unsigned int background_shader_mousepos = glGetUniformLocation(background_shader, "mousepos");
   unsigned int background_shader_scalePivot = glGetUniformLocation(background_shader, "scalePivot");
@@ -437,6 +442,7 @@ int main() {
     glUniform3fv(glass_shader_borderColor, 1, color);
     glUniform1f(glass_shader_zoom, scroll_amount);
     glUniform2f(glass_shader_scale_location, scale[0], scale[1]);
+    glUniform1i(glass_shader_lens_mode, lens_mode);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     if (glfwGetKey(window, GLFW_KEY_PERIOD) == GLFW_PRESS && timer > 0.2) {
