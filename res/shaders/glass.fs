@@ -18,11 +18,11 @@ void main() {
   vec2 transformedSamplerCoord = texCoord * scale + transformedPos;
   transformedSamplerCoord -= scale / 2;
 
-  float tl = length(transformedCoord) / zoom;
+  float tl = length(transformedCoord);
   tl = tl * tl;
   tl = tl * tl;
-  // tl = tl * tl;
-  // tl = tl * tl;
+  tl = tl * tl;
+  tl = tl * tl;
   // vec2 finalSampler = transformedSamplerCoord + (transformedCoord * tl) * 0.01;
   vec2 finalSampler = transformedSamplerCoord - (transformedCoord * (tl + zoom)) * 0.01;
   vec4 col = texture(textureSampler, finalSampler);
@@ -36,7 +36,7 @@ void main() {
   float begincircle = (1 - thickness) - fade;
   float circle = smoothstep(begincircle, begincircle + fade, length(transformedCoord));
   float circleOuter = smoothstep(begincircle + thickness, 1, length(transformedCoord));
-  col = mix(col, vec4(borderColor, 1), circle); // Border
+  // col = mix(col, vec4(borderColor, 1), circle); // Border
   col = mix(col, vec4(0, 0, 0, 0), circleOuter); // End the border color with transparent
   FragColor = col;
 }
