@@ -275,6 +275,8 @@ int main() {
   unsigned int glass_shader_scale_location = glGetUniformLocation(glass_shader, "scale");
   unsigned int glass_shader_borderColor = glGetUniformLocation(glass_shader, "borderColor");
   unsigned int glass_shader_zoom = glGetUniformLocation(glass_shader, "zoom");
+  unsigned int glass_shader_screen_size = glGetUniformLocation(glass_shader, "screenSize");
+  unsigned int glass_shader_aspect_ratio = glGetUniformLocation(glass_shader, "aspectRatio");
   unsigned int background_shader_zoom = glGetUniformLocation(background_shader, "zoom");
   unsigned int background_shader_mousepos = glGetUniformLocation(background_shader, "mousepos");
   unsigned int background_shader_scalePivot = glGetUniformLocation(background_shader, "scalePivot");
@@ -365,12 +367,20 @@ int main() {
     color[0] = colorpos[0];
     color[1] = colorpos[1];
     color[2] = colorpos[1] + colorpos[0] * 0.9;
+
+    int screensize[] = {screen_width, screen_height};
+    float aspect = (float)screensize[0] / (float)screensize[1];
+
+    printf("%02f\n", aspect);
+
     // printf("X: %02f, Y: %02f\n", pos[0], pos[1]);
     glBindVertexArray(glass_VAO);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glUseProgram(glass_shader);
     glUniform2fv(glass_shader_position_location, 1, pos);
+    glUniform2iv(glass_shader_screen_size, 1, screensize);
+    glUniform1f(glass_shader_aspect_ratio, aspect);
     glUniform3fv(glass_shader_borderColor, 1, color);
     glUniform1f(glass_shader_zoom, scroll_amount + 1.f);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
