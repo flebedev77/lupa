@@ -23,6 +23,8 @@
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 
+#include "../res/built/shaders.h"
+
 #define WINDOW_WIDTH  1920
 #define WINDOW_HEIGHT 1080
 #define OPENGL_FAIL 9999
@@ -35,19 +37,60 @@ static Window root_window = {0};
 static int screen_width = 0;
 static int screen_height = 0;
 
-static float scroll_amount = 0.0f;
+static float scroll_amount = 1.0f;
 static float scroll_sensitivity = 0.1f;
+
+static float scroll_size_amount = 1.0f;
+static float scroll_size_sensitivity = 2.f;
 
 
 static float pos[] = {0.1f, 0.8f};
 static float backgroundPos[] = {0.0f, 0.0f};
 static float scalePivot[] = {0.0f, 0.0f};
 
+static float unnormal_scale[] = {300.f, 300.f};
+static float scale[] = {
+    (300.f / WINDOW_WIDTH),
+    (300.f / WINDOW_HEIGHT)
+  };
+
+bool string_includes(const char* restrict buf, const char* restrict sub) {
+  for (size_t i = 0; buf[i] != 0; i++) {
+    if (buf[i] == sub[0]) {
+      bool match = true;
+      for (size_t j = 0; buf[i + j] != 0 && sub[j] != 0; j++) {
+        if (buf[i + j] != sub[j]) {
+          match = false; 
+          break;
+        }
+      }
+      if (match) return true;
+    }
+  }
+  return false;
+}
+
 
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 {
-  scroll_amount += (float)yoffset * scroll_sensitivity;
-  printf("Scroll received %0.2f\n", scroll_amount);
+  if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+    scroll_size_amount += (float)yoffset * scroll_size_sensitivity;
+    unnormal_scale[0] += scroll_size_amount;
+    unnormal_scale[1] += scroll_size_amount;
+
+    if (unnormal_scale[0] < 100 ||
+        unnormal_scale[1] < 100) {
+      unnormal_scale[0] = 100;
+      unnormal_scale[1] = 100;
+    }
+    scale[0] = unnormal_scale[0] / WINDOW_WIDTH;
+    scale[1] = unnormal_scale[1] / WINDOW_HEIGHT;
+
+    scroll_size_amount = 0;
+  } else {
+    scroll_amount += (float)yoffset * scroll_sensitivity;
+    if (scroll_amount < 0.f) scroll_amount = 0.f;
+  }
 
   // backgroundPos[0] -= pos[0];
   // backgroundPos[1] -= pos[1];
@@ -122,8 +165,25 @@ unsigned int createShader(const char* source, unsigned int shaderType) {
 }
 
 unsigned int createShaderProgram(const char* vs, const char* fs) {
-  struct FileData vertexSource = readFile(vs);
-  struct FileData fragmentSource = readFile(fs);
+  struct FileData vertexSource = {0};
+  struct FileData fragmentSource = {0};
+#ifdef RELEASE
+  if (string_includes(vs, "background.vs")) {
+    vertexSource.data = res_shaders_background_vs;
+    vertexSource.len = res_shaders_background_vs_len;
+    fragmentSource.data = res_shaders_background_fs;
+    fragmentSource.len = res_shaders_background_fs_len;
+  }
+  if (string_includes(vs, "glass.vs")) {
+    vertexSource.data = res_shaders_glass_vs;
+    vertexSource.len = res_shaders_glass_vs_len;
+    fragmentSource.data = res_shaders_glass_fs;
+    fragmentSource.len = res_shaders_glass_fs_len;
+  }
+#else
+  vertexSource = readFile(vs);
+  fragmentSource = readFile(fs);
+#endif
 
   if (vertexSource.len == 0 || fragmentSource.len == 0) return OPENGL_FAIL;
 
@@ -281,11 +341,6 @@ int main() {
   unsigned int background_shader_mousepos = glGetUniformLocation(background_shader, "mousepos");
   unsigned int background_shader_scalePivot = glGetUniformLocation(background_shader, "scalePivot");
 
-  float unnormal_scale[] = {300.f, 300.f};
-  float scale[] = {
-    (unnormal_scale[0] / WINDOW_WIDTH),
-    (unnormal_scale[1] / WINDOW_HEIGHT)
-  };
 
 
   glUniform2f(glass_shader_position_location, pos[0], pos[1]);
@@ -371,8 +426,6 @@ int main() {
     int screensize[] = {screen_width, screen_height};
     float aspect = (float)screensize[0] / (float)screensize[1];
 
-    printf("%02f\n", aspect);
-
     // printf("X: %02f, Y: %02f\n", pos[0], pos[1]);
     glBindVertexArray(glass_VAO);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -382,7 +435,8 @@ int main() {
     glUniform2iv(glass_shader_screen_size, 1, screensize);
     glUniform1f(glass_shader_aspect_ratio, aspect);
     glUniform3fv(glass_shader_borderColor, 1, color);
-    glUniform1f(glass_shader_zoom, scroll_amount + 1.f);
+    glUniform1f(glass_shader_zoom, scroll_amount);
+    glUniform2f(glass_shader_scale_location, scale[0], scale[1]);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
     if (glfwGetKey(window, GLFW_KEY_PERIOD) == GLFW_PRESS && timer > 0.2) {

@@ -26,10 +26,9 @@ void main() {
   tl = tl * tl;
   tl = tl * tl;
   // vec2 finalSampler = transformedSamplerCoord + (transformedCoord * tl) * 0.01;
-  vec2 finalSampler = vec2(
-      transformedSamplerCoord.x - (transformedCoord.x * (tl + zoom)) * 0.01,
-      transformedSamplerCoord.y - (transformedCoord.y * (tl + zoom)) * 0.01 * aspectRatio
-      );;
+  vec2 finalSampler = transformedCoord * (tl + zoom) * 0.01;
+  finalSampler.y *= aspectRatio;
+  finalSampler = transformedSamplerCoord - finalSampler;
   vec4 col = texture(textureSampler, finalSampler);
   // vec2 samplerDebug = texCoord + (transformedCoord * length(transformedCoord) * length(transformedCoord) * length(transformedCoord) * length(transformedCoord)) * 0.2;
   // col = vec4(samplerDebug * 0.3, 0, 1);
