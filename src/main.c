@@ -7,7 +7,6 @@
 #define STBI_NO_PIC
 #define STBI_NO_PNM
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
 
 #include <unistd.h>
 #include <stdio.h>
@@ -23,11 +22,17 @@
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 
+#include "../lib/stb_image.h"
+#include "../lib/microui.h"
 #include "../res/built/shaders.h"
 
 #define WINDOW_WIDTH  1920
 #define WINDOW_HEIGHT 1080
 #define OPENGL_FAIL 9999
+
+#define MAX_ZOOM 7.6
+
+#define RECTS_AMOUNT 255
 
 static Display* display = NULL;
 static Screen* screen = NULL;
@@ -53,13 +58,47 @@ static float scale[] = {
     (300.f / WINDOW_HEIGHT)
   };
 
+static float vertices[] = {
+    //   pos       tex
+     1.f, -1.f,  1.f, 1.f, // Bottom right
+     1.f,  1.f,  1.f, 0.f, // Top right
+    -1.f,  1.f,  0.f, 0.f, // Top left
+    -1.f, -1.f,  0.f, 1.f, // Bottom left
+  };
+
+static unsigned int indices[] = {
+    1, 2, 3,
+    0, 1, 3
+  };
+
 static int lens_mode = 1;
 
+static int current_rectangle = 0;
+
+struct ui_shader {
+  unsigned int program,
+               position_location,
+               scale_location,
+               color_location;
+};
+
 struct rectangle {
-  unsigned int VAO, VBO, EBO, shader;
+  unsigned int VAO, VBO, EBO;
+  struct ui_shader shader;
   float position[2];
   float scale[2];
+  float color[4];
 };
+struct rectangle ui_rectangles[RECTS_AMOUNT] = {0};
+
+static int text_size = 16;
+static int text_width(mu_Font font, const char* text, int len) {
+  return text_size;
+}
+
+static int text_height(mu_Font font) {
+  return text_size;
+}
 
 bool string_includes(const char* restrict buf, const char* restrict sub) {
   for (size_t i = 0; buf[i] != 0; i++) {
@@ -102,6 +141,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
   } else {
     scroll_amount += (float)yoffset * scroll_sensitivity;
     if (scroll_amount < 0.f) scroll_amount = 0.f;
+    // if (scroll_amount > MAX_ZOOM) scroll_amount = MAX_ZOOM;
   }
 
   // backgroundPos[0] -= pos[0];
@@ -183,6 +223,12 @@ unsigned int createShaderProgram(const char* vs, const char* fs) {
     fragmentSource.data = res_shaders_glass_fs;
     fragmentSource.len = res_shaders_glass_fs_len;
   }
+  if (string_includes(vs, "rect.vs")) {
+    vertexSource.data = res_shaders_ui_rect_vs;
+    vertexSource.len = res_shaders_ui_rect_vs_len;
+    fragmentSource.data = res_shaders_ui_rect_fs;
+    fragmentSource.len = res_shaders_ui_rect_fs_len;
+  }
 #else
   vertexSource = readFile(vs);
   fragmentSource = readFile(fs);
@@ -246,6 +292,73 @@ unsigned char* screenshot() {
   return buffer;
 }
 
+void clampf(float* restrict value, float min, float max) {
+  if (*value < min) *value = min;
+  if (*value > max) *value = max;
+}
+
+void init_rectangle(struct rectangle* restrict rect) {
+  if (rect->scale[0] == 0 || rect->scale[1] == 0) {
+    rect->scale[0] = 50;
+    rect->scale[1] = 50;
+    printf("Provide non 0 width and height\n");
+  }
+  // clampf(&rect->position[0], 0.0f, WINDOW_WIDTH);
+  // clampf(&rect->position[1], 0.0f, WINDOW_HEIGHT);
+
+  glGenVertexArrays(1, &rect->VAO);
+  glBindVertexArray(rect->VAO);
+
+  glGenBuffers(1, &rect->VBO);
+  glBindBuffer(GL_ARRAY_BUFFER, rect->VBO);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+  glGenBuffers(1, &rect->EBO);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, rect->EBO);
+  glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+}
+
+void draw_rectangle(struct rectangle* restrict rect) {
+  glUseProgram(rect->shader.program);
+  glUniform2f(rect->shader.position_location,
+      // (rect->position[0] / WINDOW_WIDTH),
+      // (rect->position[1] / WINDOW_HEIGHT)
+      (((float)rect->position[0] - WINDOW_WIDTH / 2.f) / WINDOW_WIDTH) * 2,
+      ((WINDOW_HEIGHT / 2.f - (float)rect->position[1]) / WINDOW_HEIGHT) * 2
+      );
+  // glUniform2fv(rect->shader.position_location, 1, &rect->position[0]);
+  glUniform2f(rect->shader.scale_location,
+      rect->scale[0] / WINDOW_WIDTH,
+      rect->scale[1] / WINDOW_HEIGHT
+      );
+  glUniform4fv(rect->shader.color_location, 1, rect->color);
+  glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+}
+
+void init_shader(struct ui_shader* restrict shader) {
+  shader->position_location = glGetUniformLocation(shader->program, "position"); 
+  shader->scale_location = glGetUniformLocation(shader->program, "scale"); 
+  shader->color_location = glGetUniformLocation(shader->program, "color"); 
+}
+
+struct rectangle* add_rectangle(float x, float y, float w, float h) {
+  current_rectangle++;
+  if (current_rectangle > RECTS_AMOUNT) {
+    return NULL;
+  }
+  ui_rectangles[current_rectangle].position[0] = x;
+  ui_rectangles[current_rectangle].position[1] = y;
+  ui_rectangles[current_rectangle].scale[0] = w;
+  ui_rectangles[current_rectangle].scale[1] = h;
+  return &(ui_rectangles[current_rectangle]);
+}
+
 int main() {
   int image_width, image_height, image_nrChannels;
 
@@ -301,19 +414,7 @@ int main() {
 
   unsigned int background_shader = createShaderProgram("res/shaders/background.vs", "res/shaders/background.fs");
   unsigned int glass_shader = createShaderProgram("res/shaders/glass.vs", "res/shaders/glass.fs");
-
-  float vertices[] = {
-    //   pos       tex
-     1.f, -1.f,  1.f, 1.f, // Bottom right
-     1.f,  1.f,  1.f, 0.f, // Top right
-    -1.f,  1.f,  0.f, 0.f, // Top left
-    -1.f, -1.f,  0.f, 1.f, // Bottom left
-  };
-
-  unsigned int indices[] = {
-    1, 2, 3,
-    0, 1, 3
-  };
+  unsigned int ui_shader_program = createShaderProgram("res/shaders/ui/rect.vs", "res/shaders/ui/rect.fs");
 
   unsigned int glass_VAO, glass_VBO, glass_EBO;
 
@@ -345,7 +446,6 @@ int main() {
   unsigned int background_shader_zoom = glGetUniformLocation(background_shader, "zoom");
   unsigned int background_shader_mousepos = glGetUniformLocation(background_shader, "mousepos");
   unsigned int background_shader_scalePivot = glGetUniformLocation(background_shader, "scalePivot");
-
 
 
   glUniform2f(glass_shader_position_location, pos[0], pos[1]);
@@ -397,15 +497,40 @@ int main() {
   double prevTime = 0, time = 0;
   double timer = 0;
 
+  struct ui_shader uishader = {0};
+  uishader.program = ui_shader_program;
+  init_shader(&uishader);
+
+  for (int i = 0; i < RECTS_AMOUNT; i++) {
+    struct rectangle* ui_rect = &ui_rectangles[i];
+    ui_rect->shader = uishader;
+    ui_rect->position[0] = 99999;
+    ui_rect->position[1] = 99999;
+    ui_rect->scale[0] = 100.f;
+    ui_rect->scale[1] = 160.f;
+    ui_rect->color[0] = 0.f;
+    ui_rect->color[1] = 0.f;
+    ui_rect->color[2] = 0.f;
+    ui_rect->color[3] = 1.f;
+    init_rectangle(ui_rect);
+  }
+
+  printf("Screen W: %d H: %d\n", screen_width, screen_height);
+
+  mu_Context ctx = {0};
+  mu_init(&ctx);
+
+  ctx.text_width = text_width;
+  ctx.text_height = text_height;
+
   while (!glfwWindowShouldClose(window))
   {
     prevTime = time;
     time = glfwGetTime();
-    double x, y;
-    glfwGetCursorPos(window, &x, &y);
-    pos[0] = (((float)x - WINDOW_WIDTH / 2.f) / WINDOW_WIDTH) * 2;
-    pos[1] = ((WINDOW_HEIGHT / 2.f - (float)y) / WINDOW_HEIGHT) * 2;
-
+    double mx, my;
+    glfwGetCursorPos(window, &mx, &my);
+    pos[0] = (((float)mx - WINDOW_WIDTH / 2.f) / WINDOW_WIDTH) * 2;
+    pos[1] = ((WINDOW_HEIGHT / 2.f - (float)my) / WINDOW_HEIGHT) * 2;
 
 
     glClearColor(0.0f, 1.0f, 1.0f, 0.0f);
@@ -445,13 +570,60 @@ int main() {
     glUniform1i(glass_shader_lens_mode, lens_mode);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
+    // struct rectangle* rect = add_rectangle(x, y, 40, 40);
+
     if (glfwGetKey(window, GLFW_KEY_PERIOD) == GLFW_PRESS && timer > 0.2) {
       timer = 0;
       is_debug = !is_debug;
       glPolygonMode(GL_FRONT_AND_BACK, is_debug ? GL_LINE : GL_FILL); 
     }
 
+    mu_input_mousemove(&ctx, mx, my);
+    mu_begin(&ctx);
+
+    if (mu_begin_window(&ctx, "Hello sailor", mu_rect(0, 0, 300, 400))) {
+      if (mu_button(&ctx, "Click me")) {
+        printf("Button clicked\n");
+      }
+
+      mu_end_window(&ctx);
+    }
+    mu_end(&ctx);
+
+    mu_Command* cmd = NULL;
+    while (mu_next_command(&ctx, &cmd)) {
+      if (cmd->type == MU_COMMAND_TEXT) {
+      }
+      if (cmd->type == MU_COMMAND_RECT) {
+        float rw = (float)cmd->rect.rect.w;
+        float rh = (float)cmd->rect.rect.h;
+        // float rw = 1;
+        // float rh = 1;
+        float rx = ((float)cmd->rect.rect.x + (float)WINDOW_WIDTH / 2.f) + rw / 2;
+        float ry = ((float)cmd->rect.rect.y + (float)WINDOW_HEIGHT / 2.f) + rh / 2;
+        // float rx = x;
+        // float ry = y;
+        // printf("Rect draw %02f %02f %02f %02f\n", rx, ry, rw, rh);
+        struct rectangle* rect = add_rectangle(rx, ry, rw, rh);
+        // struct rectangle* rect = add_rectangle(rx, ry, 3, 3);
+        rect->color[0] = (float)cmd->rect.color.r / 255;
+        rect->color[1] = (float)cmd->rect.color.g / 255;
+        rect->color[2] = (float)cmd->rect.color.b / 255;
+        // rect->color[3] = (float)cmd->rect.color.a / 255;
+        rect->color[3] = 0.8f;
+      }
+      if (cmd->type == MU_COMMAND_ICON) {
+      }
+      if (cmd->type == MU_COMMAND_CLIP) {
+      }
+    }
+
     timer += time - prevTime;
+
+    for (int i = 0; i < current_rectangle+1; i++) {
+      draw_rectangle(&ui_rectangles[i]);
+    }
+    current_rectangle = 0;
 
     glfwSwapBuffers(window);
     glfwPollEvents();
@@ -460,6 +632,16 @@ int main() {
   printf("\n");
   glDeleteProgram(background_shader);
   glDeleteProgram(glass_shader);
+  glDeleteProgram(ui_shader_program);
+
+  glDeleteVertexArrays(1, &VAO);
+  glDeleteVertexArrays(1, &glass_VAO);
+
+  for (int i = 0; i < RECTS_AMOUNT; i++) {
+    glDeleteVertexArrays(1, &ui_rectangles[i].VAO);
+  }
+
+  glDeleteTextures(1, &texture);
   glfwTerminate();
 
   free(img);

@@ -27,9 +27,12 @@ void main() {
   tl = tl * tl;
   tl = tl * tl;
   // vec2 finalSampler = transformedSamplerCoord + (transformedCoord * tl) * 0.01;
+  // Calculate the displacement map
   vec2 finalSampler = transformedCoord * (tl + zoom) * 0.01;
   finalSampler.y *= aspectRatio;
+  // Switches the displacement map application method -1 or 1
   finalSampler *= lensMode;
+  // Combine the displacement map with the coordinates to sample the texture below
   finalSampler = transformedSamplerCoord - finalSampler;
   vec4 col = texture(textureSampler, finalSampler);
   // vec2 samplerDebug = texCoord + (transformedCoord * length(transformedCoord) * length(transformedCoord) * length(transformedCoord) * length(transformedCoord)) * 0.2;
