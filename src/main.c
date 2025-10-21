@@ -24,7 +24,9 @@
 
 #include "../lib/stb_image.h"
 #include "../lib/microui.h"
+
 #include "../res/built/shaders.h"
+#include "../res/built/fonts.h"
 
 #define WINDOW_WIDTH  1920
 #define WINDOW_HEIGHT 1080
@@ -33,6 +35,7 @@
 #define MAX_ZOOM 7.6
 
 #define RECTS_AMOUNT 255
+#define GLYPHS_AMOUNT 255
 
 static Display* display = NULL;
 static Screen* screen = NULL;
@@ -74,6 +77,7 @@ static unsigned int indices[] = {
 static int lens_mode = 1;
 
 static int current_rectangle = 0;
+static int current_glyph = 0;
 
 struct ui_shader {
   unsigned int program,
@@ -90,6 +94,7 @@ struct rectangle {
   float color[4];
 };
 struct rectangle ui_rectangles[RECTS_AMOUNT] = {0};
+struct rectangle ui_glyphs[GLYPHS_AMOUNT] = {0};
 
 static int text_size = 16;
 static int text_width(mu_Font font, const char* text, int len) {
@@ -229,6 +234,12 @@ unsigned int createShaderProgram(const char* vs, const char* fs) {
     fragmentSource.data = res_shaders_ui_rect_fs;
     fragmentSource.len = res_shaders_ui_rect_fs_len;
   }
+  if (string_includes(vs, "font.vs")) {
+    vertexSource.data = res_shaders_ui_font_vs;
+    vertexSource.len = res_shaders_ui_font_vs_len;
+    fragmentSource.data = res_shaders_ui_font_fs;
+    fragmentSource.len = res_shaders_ui_font_fs_len;
+  }
 #else
   vertexSource = readFile(vs);
   fragmentSource = readFile(fs);
@@ -271,7 +282,7 @@ unsigned char* screenshot() {
     return NULL;
   }
 
-  unsigned char *buffer = (unsigned char *)malloc(screen_width * screen_height * 4); // RGBA
+  unsigned char *buffer = (unsigned char *)malloc(screen_width * screen_height * 3); // RGB
   if (!buffer) {
     fprintf(stderr, "Failed to allocate memory for the pixel buffer\n");
     XDestroyImage(image);
@@ -281,10 +292,9 @@ unsigned char* screenshot() {
   for (int y = 0; y < screen_height; ++y) {
     for (int x = 0; x < screen_width; ++x) {
       long pixel = XGetPixel(image, x, y);
-      buffer[(y * screen_width + x) * 4 + 0] = (pixel & image->red_mask) >> 16; // R
-      buffer[(y * screen_width + x) * 4 + 1] = (pixel & image->green_mask) >> 8; // G
-      buffer[(y * screen_width + x) * 4 + 2] = (pixel & image->blue_mask); // B
-      buffer[(y * screen_width + x) * 4 + 3] = 255; // A
+      buffer[(y * screen_width + x) * 3 + 0] = (pixel & image->red_mask) >> 16; // R
+      buffer[(y * screen_width + x) * 3 + 1] = (pixel & image->green_mask) >> 8; // G
+      buffer[(y * screen_width + x) * 3 + 2] = (pixel & image->blue_mask); // B
     }
   }
 
@@ -327,12 +337,9 @@ void init_rectangle(struct rectangle* restrict rect) {
 void draw_rectangle(struct rectangle* restrict rect) {
   glUseProgram(rect->shader.program);
   glUniform2f(rect->shader.position_location,
-      // (rect->position[0] / WINDOW_WIDTH),
-      // (rect->position[1] / WINDOW_HEIGHT)
       (((float)rect->position[0] - WINDOW_WIDTH / 2.f) / WINDOW_WIDTH) * 2,
       ((WINDOW_HEIGHT / 2.f - (float)rect->position[1]) / WINDOW_HEIGHT) * 2
       );
-  // glUniform2fv(rect->shader.position_location, 1, &rect->position[0]);
   glUniform2f(rect->shader.scale_location,
       rect->scale[0] / WINDOW_WIDTH,
       rect->scale[1] / WINDOW_HEIGHT
@@ -345,6 +352,18 @@ void init_shader(struct ui_shader* restrict shader) {
   shader->position_location = glGetUniformLocation(shader->program, "position"); 
   shader->scale_location = glGetUniformLocation(shader->program, "scale"); 
   shader->color_location = glGetUniformLocation(shader->program, "color"); 
+}
+
+struct rectangle* add_glyph(float x, float y, float w, float h) {
+  current_glyph++;
+  if (current_glyph > GLYPHS_AMOUNT) {
+    return NULL;
+  }
+  ui_glyphs[current_glyph].position[0] = x;
+  ui_glyphs[current_glyph].position[1] = y;
+  ui_glyphs[current_glyph].scale[0] = w;
+  ui_glyphs[current_glyph].scale[1] = h;
+  return &(ui_glyphs[current_glyph]);
 }
 
 struct rectangle* add_rectangle(float x, float y, float w, float h) {
@@ -366,13 +385,13 @@ int main() {
   x_init();
   unsigned char* img = screenshot();
   
-  unsigned char* image_textureData = stbi_load(
-    "res/image.png",
-    &image_width,
-    &image_height,
-    &image_nrChannels,
-    0
-  );
+  // unsigned char* image_textureData = stbi_load(
+  //   "res/image.png",
+  //   &image_width,
+  //   &image_height,
+  //   &image_nrChannels,
+  //   0
+  // );
 
   printf("Image.png: %d %d %d\nFirst pixel rgb values: ", image_width, image_height, image_nrChannels);
   for (size_t i = 0; i < 10; i++) {
@@ -415,6 +434,7 @@ int main() {
   unsigned int background_shader = createShaderProgram("res/shaders/background.vs", "res/shaders/background.fs");
   unsigned int glass_shader = createShaderProgram("res/shaders/glass.vs", "res/shaders/glass.fs");
   unsigned int ui_shader_program = createShaderProgram("res/shaders/ui/rect.vs", "res/shaders/ui/rect.fs");
+  unsigned int font_shader_program = createShaderProgram("res/shaders/ui/font.vs", "res/shaders/ui/font.fs");
 
   unsigned int glass_VAO, glass_VBO, glass_EBO;
 
@@ -478,18 +498,27 @@ int main() {
   glEnableVertexAttribArray(1);
   glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
+  unsigned int glyph_atlas_texture;
+  glGenTextures(1, &glyph_atlas_texture);
+  glBindTexture(GL_TEXTURE_2D, glyph_atlas_texture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);	
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screen_width, screen_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, font_width, font_height, 0, GL_RED, GL_UNSIGNED_BYTE, font_data);
+  glGenerateMipmap(GL_TEXTURE_2D);
+  // stbi_image_free(image_textureData);
+
   glGenTextures(1, &texture);
   glBindTexture(GL_TEXTURE_2D, texture);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);	
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_NEAREST);
-  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, screen_width, screen_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, screen_width, screen_height, 0, GL_RGB, GL_UNSIGNED_BYTE, img);
   // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image_width, image_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_textureData);
   glGenerateMipmap(GL_TEXTURE_2D);
-  stbi_image_free(image_textureData);
 
   glBindVertexArray(VAO);
 
@@ -501,11 +530,29 @@ int main() {
   uishader.program = ui_shader_program;
   init_shader(&uishader);
 
+  struct ui_shader fontshader = {0};
+  fontshader.program = font_shader_program;
+  init_shader(&fontshader);
+
+  for (int i = 0; i < GLYPHS_AMOUNT; i++) {
+    struct rectangle* glyph = &ui_glyphs[i];
+    glyph->shader = fontshader;
+    glyph->position[0] = 99999.f;
+    glyph->position[1] = 99999.f;
+    glyph->scale[0] = 160.f;
+    glyph->scale[1] = 100.f;
+    glyph->color[0] = 0.f;
+    glyph->color[1] = 0.f;
+    glyph->color[2] = 0.f;
+    glyph->color[3] = 1.f;
+    init_rectangle(glyph);
+  }
+
   for (int i = 0; i < RECTS_AMOUNT; i++) {
     struct rectangle* ui_rect = &ui_rectangles[i];
     ui_rect->shader = uishader;
-    ui_rect->position[0] = 99999;
-    ui_rect->position[1] = 99999;
+    ui_rect->position[0] = 99999.f;
+    ui_rect->position[1] = 99999.f;
     ui_rect->scale[0] = 100.f;
     ui_rect->scale[1] = 160.f;
     ui_rect->color[0] = 0.f;
@@ -572,6 +619,8 @@ int main() {
 
     // struct rectangle* rect = add_rectangle(x, y, 40, 40);
 
+    add_glyph(mx, my, font_width, font_height);
+
     if (glfwGetKey(window, GLFW_KEY_PERIOD) == GLFW_PRESS && timer > 0.2) {
       timer = 0;
       is_debug = !is_debug;
@@ -597,15 +646,9 @@ int main() {
       if (cmd->type == MU_COMMAND_RECT) {
         float rw = (float)cmd->rect.rect.w;
         float rh = (float)cmd->rect.rect.h;
-        // float rw = 1;
-        // float rh = 1;
-        float rx = ((float)cmd->rect.rect.x + (float)WINDOW_WIDTH / 2.f) + rw / 2;
-        float ry = ((float)cmd->rect.rect.y + (float)WINDOW_HEIGHT / 2.f) + rh / 2;
-        // float rx = x;
-        // float ry = y;
-        // printf("Rect draw %02f %02f %02f %02f\n", rx, ry, rw, rh);
+        float rx = (float)cmd->rect.rect.x + rw / 2;
+        float ry = (float)cmd->rect.rect.y + rh / 2;
         struct rectangle* rect = add_rectangle(rx, ry, rw, rh);
-        // struct rectangle* rect = add_rectangle(rx, ry, 3, 3);
         rect->color[0] = (float)cmd->rect.color.r / 255;
         rect->color[1] = (float)cmd->rect.color.g / 255;
         rect->color[2] = (float)cmd->rect.color.b / 255;
@@ -624,6 +667,14 @@ int main() {
       draw_rectangle(&ui_rectangles[i]);
     }
     current_rectangle = 0;
+
+    glBindTexture(GL_TEXTURE_2D, glyph_atlas_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    for (int i = 0; i < current_glyph+1; i++) {
+      draw_rectangle(&ui_glyphs[i]);
+    }
+    current_glyph = 0;
 
     glfwSwapBuffers(window);
     glfwPollEvents();
